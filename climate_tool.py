@@ -619,29 +619,210 @@ class ClimateAnalysisTool:
             layout=Layout(width='200px')
         )
         
-        # Status display
-        status_display = widgets.HTML(value="")
+        # Create progress bar
+        progress = widgets.IntProgress(
+            value=0,
+            min=0,
+            max=100,
+            description='Progress:',
+            bar_style='info',
+            style={'description_width': 'initial'},
+            layout=Layout(width='50%', visibility='hidden')
+        )
+        
+        # Create status display with better styling
+        status_display = widgets.HTML(
+            value="",
+            layout=Layout(width='100%')
+        )
+        
+        # Status update callback function
+        def update_status(message, progress_value=None, is_error=False, is_success=False):
+            # Update progress bar if value provided
+            if progress_value is not None:
+                progress.value = progress_value
+                progress.layout.visibility = 'visible'
+                
+                # Hide progress bar when complete
+                if progress_value >= 100:
+                    progress.bar_style = 'success'
+            
+            # Style the message based on type
+            style = ""
+            if is_error:
+                style = "color: #dc3545; background: #f8d7da; padding: 10px; border-radius: 5px;"
+            elif is_success:
+                style = "color: #28a745; background: #d4edda; padding: 10px; border-radius: 5px;"
+            else:
+                style = "background: #f8f9fa; padding: 10px; border-radius: 5px;"
+                
+            # Update status message
+            status_display.value = f"<div style='{style}'>{message}</div>"
         
         # Export button handlers
         def on_export_current(b):
-            status_display.value = "<p>Exporting current view...</p>"
-            # Implement export logic
+            # Reset progress bar
+            progress.value = 0
+            progress.bar_style = 'info'
+            progress.layout.visibility = 'visible'
+            
+            # Show initial status
+            update_status("<p>Initializing export of current view...</p>")
+            
+            # Get current panel data
+            active_panel = "left_panel"
+            if self.current_session["comparison_active"]:
+                # Determine which panel is active based on most recent analysis
+                # For now we'll just default to left
+                active_panel = "left_panel"
+            
+            # Ensure we have the state information
+            panel_state = self.current_session[active_panel].get("state", {})
+            panel_results = self.current_session[active_panel].get("results", {})
+            
+            # Verify data availability
+            if not panel_results.get("data"):
+                update_status("<p>No data available for export. Please run analysis first.</p>", is_error=True)
+                progress.layout.visibility = 'hidden'
+                return
+            
+            # Get dataset, parameter, and index with proper fallbacks
+            dataset = panel_state.get("dataset")
+            if not dataset:
+                dataset = panel_results.get("dataset", "general")
+            
+            parameter = panel_state.get("parameter")
+            if not parameter:
+                parameter = panel_results.get("parameter", "climate")
+            
+            index = panel_state.get("index")
+            if not index:
+                index = panel_results.get("index", "data")
+            
+            # Create comprehensive panel data with all necessary metadata
+            panel_data = {
+                "state": panel_state,
+                "data": panel_results.get("data"),
+                "results": panel_results,
+                "temporal_data": panel_results.get("temporal_data", []),
+                "analysis_engine": self.analysis_engine,  # Pass the analysis engine for recreating data
+                "dataset": dataset,
+                "parameter": parameter,
+                "index": index,
+                "time_range": panel_state.get("time_range", panel_results.get("time_range", (2020, 2020)))
+            }
+            
+            # Print debug info to console
+            print(f"Export data: dataset={panel_data['dataset']}, parameter={panel_data['parameter']}, index={panel_data['index']}")
+            
+            # Get selected format
+            format_type = format_dropdown.value
+            
             try:
-                # Example export call
-                # self.exporter.export_current_view(format_dropdown.value, self.current_session)
-                status_display.value = "<p style='color: green'>Export started successfully! Files will be available in your Google Drive.</p>"
+                # Define status callback for real-time updates
+                def export_progress_callback(message):
+                    # Parse progress percentage if included
+                    import re
+                    progress_match = re.search(r"(\d+)%", message)
+                    progress_value = int(progress_match.group(1)) if progress_match else None
+                    
+                    # Determine message type
+                    is_error = any(err in message.lower() for err in ["error", "failed", "cannot"])
+                    is_success = any(succ in message.lower() for succ in ["success", "complete", "saved"])
+                    
+                    # Update status
+                    update_status(message, progress_value, is_error, is_success)
+                
+                # Call the enhanced exporter
+                result = self.exporter.export_current_view(
+                    format_type, 
+                    panel_data,
+                    export_progress_callback
+                )
+                
+                # Update final status
+                if "error" in result.lower():
+                    update_status(result, 100, is_error=True)
+                else:
+                    update_status(result, 100, is_success=True)
+                    
             except Exception as e:
-                status_display.value = f"<p style='color: red'>Export failed: {str(e)}</p>"
+                import traceback
+                traceback.print_exc()  # Print full stack trace for debugging
+                update_status(f"<p>Export failed: {str(e)}</p>", 100, is_error=True)
         
         def on_export_all(b):
-            status_display.value = "<p>Exporting all data...</p>"
-            # Implement export logic
+            # Reset progress bar
+            progress.value = 0
+            progress.bar_style = 'info'
+            progress.layout.visibility = 'visible'
+            
+            # Show initial status
+            update_status("<p>Initializing export of all data...</p>")
+            
+            # Get current panel data (similar to above)
+            active_panel = "left_panel"
+            if self.current_session["comparison_active"]:
+                # Determine which panel is active based on most recent analysis
+                # For now we'll just default to left
+                active_panel = "left_panel"
+                
+            panel_data = {
+                "state": self.current_session[active_panel]["state"],
+                "data": self.current_session[active_panel].get("results", {}).get("data"),
+                "results": self.current_session[active_panel].get("results", {}),
+                "temporal_data": self.current_session[active_panel].get("results", {}).get("temporal_data", []),
+                "analysis_engine": self.analysis_engine  # Pass the analysis engine for recreating data
+            }
+            
+            # Verify data availability
+            if not panel_data["data"]:
+                update_status("<p>No data available for export. Please run analysis first.</p>", is_error=True)
+                progress.layout.visibility = 'hidden'
+                return
+            
+            # Get selected format
+            format_type = format_dropdown.value
+            
             try:
-                # Example export call
-                # self.exporter.export_all_data(format_dropdown.value, self.current_session)
-                status_display.value = "<p style='color: green'>Export started successfully! This may take some time. Files will be available in your Google Drive.</p>"
+                # Define status callback for real-time updates (same as above)
+                def export_progress_callback(message):
+                    import re
+                    progress_match = re.search(r"(\d+)%", message)
+                    
+                    # For "all data" exports, we'll estimate progress from status messages
+                    if "year" in message.lower() and "of" in message:
+                        # Try to parse "year X of Y" pattern
+                        year_match = re.search(r"year (\d+) of (\d+)", message.lower())
+                        if year_match:
+                            current = int(year_match.group(1))
+                            total = int(year_match.group(2))
+                            progress_value = int((current / total) * 100)
+                        else:
+                            progress_value = None
+                    else:
+                        progress_value = int(progress_match.group(1)) if progress_match else None
+                    
+                    is_error = any(err in message.lower() for err in ["error", "failed", "cannot"])
+                    is_success = any(succ in message.lower() for succ in ["success", "complete", "saved"])
+                    
+                    update_status(message, progress_value, is_error, is_success)
+                
+                # Call the enhanced exporter
+                result = self.exporter.export_all_data(
+                    format_type, 
+                    panel_data,
+                    export_progress_callback
+                )
+                
+                # Update final status
+                if "error" in result.lower():
+                    update_status(result, 100, is_error=True)
+                else:
+                    update_status(result, 100, is_success=True)
+                    
             except Exception as e:
-                status_display.value = f"<p style='color: red'>Export failed: {str(e)}</p>"
+                update_status(f"<p>Export failed: {str(e)}</p>", 100, is_error=True)
         
         export_current_btn.on_click(on_export_current)
         export_all_btn.on_click(on_export_all)
@@ -654,6 +835,7 @@ class ClimateAnalysisTool:
                 export_all_btn,
                 format_dropdown
             ]),
+            progress,
             status_display
         ], layout=Layout(width='100%', border='1px solid #ddd', padding='10px', margin='20px 0'))
         
@@ -877,9 +1059,9 @@ class ClimateAnalysisTool:
                 panel_state["index"],
                 start_year=start_year,
                 end_year=end_year,
-                year_callback=get_image_for_year  # Pass the callback
+                year_callback=get_image_for_year  # Pass the callback       
             )
-            
+
             # Create temporal plot
             plot_widget = self.visualizer.create_temporal_plot(
                 results["temporal_data"],

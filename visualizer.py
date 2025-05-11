@@ -43,6 +43,9 @@ class Visualizer:
         # Create map
         m = geemap.Map(layout=Layout(width='100%', height='500px'))
         
+        # Store the map's legend state in a custom attribute
+        m.legend_visible = False
+        
         # Set center and zoom if provided
         if center:
             m.center = center
@@ -62,17 +65,79 @@ class Visualizer:
         # Add layer
         m.addLayer(image, vis_params, title)
         
-        # Add color bar (we'll keep just one)
-        m.add_colorbar(
-            vis_params['palette'],
-            vis_params['min'],
-            vis_params['max'],
-            title,
-            position='bottomright'
-        )
-        
         # Create title
         map_title = HTML(value=f"<h5>{title}</h5>")
+        
+        # Create legend toggle button
+        legend_btn = widgets.ToggleButton(
+            value=False,
+            description='Show Legend',
+            disabled=False,
+            button_style='', 
+            tooltip='Toggle legend visibility',
+            layout=Layout(width='120px')
+        )
+        
+        # Improved method to remove all legends from the map
+        def remove_all_legends(map_obj):
+            """Remove all legends from the map"""
+            try:
+                # First try using the built-in method if it exists
+                if hasattr(map_obj, 'remove_colorbar'):
+                    map_obj.remove_colorbar()
+                
+                # Additionally, find and remove any colorbar widgets
+                # Check if map has legend_widget attribute
+                if hasattr(map_obj, 'legend_widget') and map_obj.legend_widget is not None:
+                    map_obj.remove_control(map_obj.legend_widget)
+                    map_obj.legend_widget = None
+                
+                # Also check for colorbar attribute
+                if hasattr(map_obj, 'colorbar') and map_obj.colorbar is not None:
+                    map_obj.remove_control(map_obj.colorbar)
+                    map_obj.colorbar = None
+                    
+                # Also manually scan and remove widgets that might be legends
+                controls_to_remove = []
+                for control in map_obj.controls:
+                    if hasattr(control, 'name') and 'colorbar' in control.name.lower():
+                        controls_to_remove.append(control)
+                    elif hasattr(control, 'description') and 'legend' in str(control.description).lower():
+                        controls_to_remove.append(control)
+                
+                for control in controls_to_remove:
+                    map_obj.remove_control(control)
+                    
+                # Update the legend state
+                map_obj.legend_visible = False
+            except Exception as e:
+                print(f"Error removing legends: {str(e)}")
+        
+        # Handle legend toggle
+        def on_legend_toggle(change):
+            try:
+                if change['new']:  # Button is toggled on
+                    # First remove any existing legends to prevent duplicates
+                    remove_all_legends(m)
+                    
+                    # Then add the colorbar
+                    m.add_colorbar(
+                        vis_params['palette'],
+                        vis_params['min'],
+                        vis_params['max'],
+                        title,
+                        position='bottomright'
+                    )
+                    
+                    # Update the legend state
+                    m.legend_visible = True
+                else:  # Button is toggled off
+                    # Remove all legends
+                    remove_all_legends(m)
+            except Exception as e:
+                print(f"Error toggling legend: {str(e)}")
+        
+        legend_btn.observe(on_legend_toggle, names='value')
         
         # Create map widget (will be used for year selector creation)
         map_widget = VBox([
@@ -89,17 +154,22 @@ class Visualizer:
                 year_callback
             )
             
-            # No legend toggle needed - we'll remove this control
-            
-            # Update map widget to include year selector
+            # Update map widget to include year selector and legend toggle
             map_widget = VBox([
                 map_title,
                 m,
-                widgets.HBox([year_selector])
+                widgets.HBox([year_selector, legend_btn])
+            ])
+        else:
+            # Just add the legend toggle without year selector
+            map_widget = VBox([
+                map_title,
+                m,
+                widgets.HBox([legend_btn])
             ])
         
-        # Create visualization controls
-        vis_controls = self.create_visualization_controls(image, vis_params, map_widget, title)
+        # Create visualization controls - pass the legend toggle button to coordinate them
+        vis_controls = self.create_visualization_controls(image, vis_params, map_widget, title, legend_btn)
         
         # Return combined widget
         return widgets.VBox([
@@ -440,7 +510,7 @@ class Visualizer:
         
         return HTML(value=stats_html)
     
-    def create_visualization_controls(self, image, vis_params, map_widget, layer_name):
+    def create_visualization_controls(self, image, vis_params, map_widget, title, legend_btn=None):
         """
         Create controls for adjusting visualization parameters
         
@@ -448,7 +518,8 @@ class Visualizer:
             image: Earth Engine image
             vis_params: Current visualization parameters
             map_widget: Map widget to update
-            layer_name: Name of the layer to update
+            title: Name of the layer to update
+            legend_btn: Optional legend toggle button to coordinate states
             
         Returns:
             Widget with visualization controls
@@ -517,6 +588,38 @@ class Visualizer:
         
         # Status message
         status_message = widgets.HTML(value="")
+        
+        # Helper function to remove all legends
+        def remove_all_legends(m):
+            """Remove all legends from the map"""
+            try:
+                # First try using the built-in method if it exists
+                if hasattr(m, 'remove_colorbar'):
+                    m.remove_colorbar()
+                
+                # Additionally, find and remove any colorbar widgets
+                # Check if map has legend_widget attribute
+                if hasattr(m, 'legend_widget') and m.legend_widget is not None:
+                    m.remove_control(m.legend_widget)
+                    m.legend_widget = None
+                
+                # Also check for colorbar attribute
+                if hasattr(m, 'colorbar') and m.colorbar is not None:
+                    m.remove_control(m.colorbar)
+                    m.colorbar = None
+                    
+                # Also manually scan and remove widgets that might be legends
+                controls_to_remove = []
+                for control in m.controls:
+                    if hasattr(control, 'name') and 'colorbar' in control.name.lower():
+                        controls_to_remove.append(control)
+                    elif hasattr(control, 'description') and 'legend' in str(control.description).lower():
+                        controls_to_remove.append(control)
+                
+                for control in controls_to_remove:
+                    m.remove_control(control)
+            except Exception as e:
+                print(f"Error removing legends: {str(e)}")
         
         # Apply button handler
         def on_apply(b):
@@ -622,30 +725,86 @@ class Visualizer:
                 # Access the map object
                 m = map_widget.children[1]
                 
-                # Remove old layer and add new one
-                m.remove_layer(layer_name)
-                m.addLayer(image, new_vis_params, layer_name)
+                # Remember the current legend state
+                legend_was_visible = False
+                if hasattr(m, 'legend_visible'):
+                    legend_was_visible = m.legend_visible
                 
-                # Update colorbar
+                # Find the layer to update - FIX HERE
+                layer_name = title
                 try:
-                    # First remove existing colorbar if any
-                    if hasattr(m, 'colorbar') and m.colorbar is not None:
-                        m.remove_colorbar()
+                    # Check if layers is a dictionary or attribute object
+                    if hasattr(m, 'layers'):
+                        if hasattr(m.layers, 'keys'):
+                            # Dictionary-like access
+                            for layer_key in m.layers.keys():
+                                if layer_key.startswith('ee_layer_') and hasattr(m.layers[layer_key], 'name'):
+                                    if m.layers[layer_key].name == title:
+                                        layer_name = m.layers[layer_key].name
+                                        break
+                        elif isinstance(m.layers, (list, tuple)):
+                            # List or tuple access
+                            for layer in m.layers:
+                                if hasattr(layer, 'name') and layer.name == title:
+                                    layer_name = layer.name
+                                    break
+                except Exception as e:
+                    print(f"Warning: Error finding layer: {str(e)}")
+                
+                # Try a more direct approach if needed
+                try:
+                    # Remove the layer by name
+                    m.remove_layer(layer_name)
+                except Exception as e:
+                    print(f"Warning: Error removing layer: {str(e)}")
+                    # Try alternate approach - remove by title
+                    found = False
+                    # If layers is an iterable, try to find matching layer
+                    if isinstance(m.layers, (list, tuple)):
+                        for i, layer in enumerate(m.layers):
+                            if hasattr(layer, 'name') and layer.name == title:
+                                # Remove this layer if possible
+                                try:
+                                    m.layers = m.layers[:i] + m.layers[i+1:]
+                                    found = True
+                                    break
+                                except:
+                                    pass
                     
-                    # Add new colorbar with the actual min/max values
+                    # If still not found, just try to clear and re-add
+                    if not found:
+                        # As a fallback, try to recreate the map with the new layer
+                        print("Using fallback layer approach")
+                
+                # Add layer with new visualization parameters
+                m.addLayer(image, new_vis_params, title)
+                
+                # Before adding new legend, remove any existing ones
+                remove_all_legends(m)
+                
+                # Update colorbar only if legend was visible or button is toggled on
+                legend_is_toggled_on = legend_btn is not None and legend_btn.value
+                
+                if legend_was_visible or legend_is_toggled_on:
+                    # Add new colorbar
                     m.add_colorbar(
                         new_vis_params['palette'],
                         new_vis_params['min'],
                         new_vis_params['max'],
-                        layer_name,
+                        title,
                         position='bottomright'
                     )
-                except Exception as e:
-                    print(f"Error updating colorbar: {str(e)}")
+                    # Update legend state
+                    m.legend_visible = True
+                else:
+                    # Ensure legend stays off
+                    m.legend_visible = False
                 
                 status_message.value = "<p style='color: green'>Visualization updated!</p>"
                 
             except Exception as e:
+                import traceback
+                traceback.print_exc()  # Print full stack trace for debugging
                 status_message.value = f"<p style='color: red'>Error updating visualization: {str(e)}</p>"
         
         apply_button.on_click(on_apply)
