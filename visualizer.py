@@ -302,11 +302,13 @@ class Visualizer:
         # Create update function that actually updates the map
         def update_map_for_year(change):
             if not image_callback:
+                print("No image callback provided")
                 return
                 
             try:
                 # Get the new year
-                new_year = change.new
+                new_year = change['new']
+                print(f"Updating map for year: {new_year}")
                 
                 # Get image for the new year
                 new_image = image_callback(new_year)
@@ -315,52 +317,117 @@ class Visualizer:
                     # Get map from widget (second child is the map)
                     m = map_widget.children[1]
                     
-                    # Get current layer
-                    layer_name = None
-                    for layer_key in m.layers.keys():
-                        if layer_key.startswith('ee_layer_'):
-                            layer_name = m.layers[layer_key].name
-                            break
+                    # Save current view
+                    center = m.center
+                    zoom = m.zoom
                     
-                    if layer_name:
-                        # Get current visualization parameters
-                        vis_params = None
+                    # Remember the current legend state
+                    legend_visible = False
+                    if hasattr(m, 'legend_visible'):
+                        legend_visible = m.legend_visible
+                    
+                    # Get current visualization parameters (try to maintain them)
+                    # Default visualization parameters
+                    vis_params = {
+                        'min': 0,
+                        'max': 100,
+                        'palette': ['blue', 'white', 'red']
+                    }
+                    
+                    # Try to extract vis_params from existing layers
+                    try:
                         for layer in m.layers:
-                            if hasattr(layer, 'name') and layer.name == layer_name:
+                            if hasattr(layer, 'vis_params'):
                                 vis_params = layer.vis_params
                                 break
+                            if hasattr(layer, 'name') and 'ee_layer' in str(layer.name).lower():
+                                if hasattr(layer, 'vis_params'):
+                                    vis_params = layer.vis_params
+                                    break
+                    except Exception as e:
+                        print(f"Error getting vis_params: {e}")
+                    
+                    # Clear previous layers
+                    try:
+                        # Try to get only the first layer (usually the base map)
+                        base_layers = [m.layers[0]] if len(m.layers) > 0 else []
                         
-                        if not vis_params:
-                            # Default vis params
-                            vis_params = {
-                                'min': 0,
-                                'max': 100,
-                                'palette': ['blue', 'white', 'red']
-                            }
-                        
-                        # Remove old layer
-                        m.remove_layer(layer_name)
-                        
-                        # Add new layer with the same name
-                        m.addLayer(new_image, vis_params, layer_name)
-                        
-                        # Update colorbar if needed
+                        # Replace all layers with just the base layer
+                        m.layers = base_layers
+                    except Exception as e:
+                        print(f"Error clearing layers: {e}")
+                        # Alternative approach if the above fails
                         try:
-                            m.remove_colorbar()
-                            m.add_colorbar(
-                                vis_params['palette'],
-                                vis_params['min'],
-                                vis_params['max'],
-                                layer_name,
-                                position='bottomright'
-                            )
-                        except:
-                            pass
-                        
-                        print(f"Map updated for year {new_year}")
-                        
+                            # Try to clear all earth engine layers
+                            layers_to_remove = []
+                            for i, layer in enumerate(m.layers):
+                                if i > 0:  # Keep base layer
+                                    layers_to_remove.append(layer)
+                            
+                            for layer in layers_to_remove:
+                                m.remove_layer(layer)
+                        except Exception as e2:
+                            print(f"Error with alternative layer removal: {e2}")
+                    
+                    # Function to remove all legends
+                    def remove_all_legends(map_obj):
+                        try:
+                            if hasattr(map_obj, 'remove_colorbar'):
+                                map_obj.remove_colorbar()
+                            
+                            if hasattr(map_obj, 'legend_widget') and map_obj.legend_widget is not None:
+                                map_obj.remove_control(map_obj.legend_widget)
+                                map_obj.legend_widget = None
+                            
+                            if hasattr(map_obj, 'colorbar') and map_obj.colorbar is not None:
+                                map_obj.remove_control(map_obj.colorbar)
+                                map_obj.colorbar = None
+                        except Exception as e:
+                            print(f"Error removing legends: {e}")
+                    
+                    # Remove legends
+                    remove_all_legends(m)
+                    
+                    # Add the new layer
+                    title = "Annual maximum temperature"  # Default title
+                    try:
+                        # Try to get original title from map_widget
+                        if hasattr(map_widget, 'children') and len(map_widget.children) > 0:
+                            if isinstance(map_widget.children[0], HTML):
+                                title_html = map_widget.children[0].value
+                                import re
+                                title_match = re.search(r'<h5>(.*?)</h5>', title_html)
+                                if title_match:
+                                    title = title_match.group(1)
+                    except:
+                        pass
+                    
+                    # Add the new layer with the image for the selected year
+                    m.addLayer(new_image, vis_params, f"{title} ({new_year})")
+                    
+                    # Restore view
+                    m.center = center
+                    m.zoom = zoom
+                    
+                    # Restore legend if it was visible
+                    if legend_visible:
+                        m.add_colorbar(
+                            vis_params['palette'],
+                            vis_params['min'],
+                            vis_params['max'],
+                            f"{title} ({new_year})",
+                            position='bottomright'
+                        )
+                        m.legend_visible = True
+                    
+                    print(f"Map updated for year {new_year}")
+                else:
+                    print("Could not update map: image or map_widget is None")
+                    
             except Exception as e:
-                print(f"Error updating map for year {change.new}: {str(e)}")
+                import traceback
+                traceback.print_exc()
+                print(f"Error updating map for year {change.get('new', 'unknown')}: {str(e)}")
         
         # Set callback for year change
         year_dropdown.observe(update_map_for_year, names='value')

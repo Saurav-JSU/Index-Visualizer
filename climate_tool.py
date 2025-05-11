@@ -1045,8 +1045,10 @@ class ClimateAnalysisTool:
                         index=panel_state["index"]
                     )
                     
-                    # Return the image
-                    return result.clip(panel_state["geometry"])
+                    # Return the clipped image
+                    clipped = result.clip(panel_state["geometry"])
+                    print(f"Successfully generated image for year {year}")
+                    return clipped
                 except Exception as e:
                     print(f"Error getting image for year {year}: {str(e)}")
                     return None
@@ -1059,9 +1061,9 @@ class ClimateAnalysisTool:
                 panel_state["index"],
                 start_year=start_year,
                 end_year=end_year,
-                year_callback=get_image_for_year  # Pass the callback       
+                year_callback=get_image_for_year  # Pass the callback
             )
-
+            
             # Create temporal plot
             plot_widget = self.visualizer.create_temporal_plot(
                 results["temporal_data"],
@@ -1078,6 +1080,8 @@ class ClimateAnalysisTool:
             ]
             
         except Exception as e:
+            import traceback
+            traceback.print_exc()  # Print full stack trace for debugging
             error_message = f"<p style='color: red'>Analysis failed: {str(e)}</p>"
             results_container.children = [widgets.HTML(value=error_message)]
 
