@@ -27,21 +27,7 @@ A comprehensive Python-based tool for analyzing climate data using Google Earth 
 
 ## Installation
 
-### Option 1: Using Conda (Recommended)
-
-1. Clone the repository:
-```bash
-git clone https://github.com/Saurav-JSU/Index-Visualizer.git
-cd Index-Visualizer
-```
-
-2. Create and activate the conda environment:
-```bash
-conda env create -f environment.yml
-conda activate climate-analysis
-```
-
-### Option 2: Using pip
+### Option 1: Using pip
 
 1. Clone the repository:
 ```bash
@@ -63,21 +49,32 @@ source climate-venv/bin/activate
 pip install -r requirements.txt
 ```
 
-## Getting Started
+### Option 2: Using Conda
 
-### Jupyter Notebook Interface
-
-1. Ensure your conda environment is activated:
+1. Clone the repository:
 ```bash
+git clone https://github.com/Saurav-JSU/Index-Visualizer.git
+cd Index-Visualizer
+```
+
+2. Create and activate the conda environment:
+```bash
+conda env create -f environment.yml
 conda activate climate-analysis
 ```
 
-2. Launch Jupyter Notebook:
+## Getting Started
+
+### VS Code Interface
+
+1. Ensure your environment is activated (pip or conda).
+
+2. Open the project in VS Code:
 ```bash
-jupyter notebook
+code .
 ```
 
-3. Open `main.ipynb` and follow the instructions in the notebook.
+3. Open and run `main.ipynb` in VS Code.
 
 ### Command-Line Interface
 
@@ -158,6 +155,7 @@ The Climate Analysis Tool relies on the following key packages:
 - **earthengine-api**: For Google Earth Engine access
 - **geemap**: For Earth Engine mapping
 - **ipywidgets**: For interactive widgets
+- **anywidgets**: For custom interactive widgets
 - **rasterio**, **xarray**, **geopandas**: For geospatial data handling
 - **plotly**: For interactive plots
 - **jupyter**: For notebook interface
